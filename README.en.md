@@ -4,7 +4,7 @@
 
 One `docker compose up` and you are in. Self-hosted, multi-tenant, and the schema stays in your own database.
 
-[Quick Start](#quick-start) · [Features](#features) · [Build from Source](#build-from-source) · [中文](./README.md)
+[Quick Start](#quick-start) · [Platform Features](#platform-features) · [Mall App Features](#mall-app-features) · [Build from Source](#build-from-source) · [中文](./README.md)
 
 ![App center](docs/images/app-center.png)
 
@@ -17,7 +17,7 @@ lt-app is built for that layer:
 - **Business users change it themselves.** Fields, validation, approval nodes, list columns, mobile entry points are all configuration, not releases.
 - **One model covers collect → route → analyze.** Data collected from a form flows straight into an approval process, then into views and aggregate tables. No export/import dance.
 - **Self-hosted and multi-tenant.** A single instance can serve several business units with isolated schemas, orgs, roles and permissions.
-- **Not a demo.** The bundled mall app (products, SKUs, orders, inventory, payment, after-sales) and the tools backend run on this platform.
+- **Not a demo.** The bundled mall app (products, SKUs, orders, inventory, payment, after-sales — see [Mall App Features](#mall-app-features)) and the tools backend run on this platform.
 
 Typical scenarios: expense/purchase/contract approval, order fulfilment and inventory, customer and asset ledgers, external data collection via shared forms and QR codes, and department portals.
 
@@ -44,7 +44,7 @@ Data is persisted under `docker/`: `mysql_data/` (database), `logs/` (app + ngin
 
 If port `80` or `8088` is already taken by a local dev server, remap the ports in `docker-compose.yml` (e.g. `8080:80`, `18088:8088`) and use <http://localhost:8080/ltapp/>.
 
-## Features
+## Platform Features
 
 - **Form & data modeling** — text, textarea, rich text, number, select, radio, checkbox, date/time, image, file, address, tabs, divider, user/department pickers, sub-form, parent-child related query, formula, serial number — 20+ built-in field types. Drag to lay out, configure on the right, separate PC and mobile layouts.
 - **Views & data shaping** — grid (inline editing, quick-filter chips, batch update), kanban, gallery, hierarchy, gantt, dependency views; multi-table joined views with computed fields and per-view permissions; aggregate tables (dimension + metric) so list queries don't join at runtime.
@@ -67,6 +67,43 @@ Stack:
 | Modules | `lt-app-runtime` model & runtime · `lt-app-studio` design-time & API · `lt-app-system` users/tenants/permissions · `lt-app-auth` auth · `lt-app-connector` external systems |
 
 Models, views and process definitions are metadata stored in the database, so moving an app between environments is an import/export, not a code change.
+
+## Mall App Features
+
+The bundled `mall商城` is not a mockup — it is a working system assembled from the capabilities above: twenty-odd tables, a set of views and aggregate tables, dozens of API actions, and a complaint-handling workflow, all stored as configuration in the database. It has two sides: the buyer-facing C-end storefront is a separate frontend (Vue 3 + Vite + Element Plus, reading and writing platform data through the public API layer), while the merchant console is assembled inside the platform with the page designer and opens as a mobile to-do workspace.
+
+The data layer links products (SPU / SKU / categories), orders and order items, shipping addresses, payment records, after-sales cases, product reviews, shipments and stock-in records. On top of it sit "buyable products" and "SKU stock" views plus "product sales" and "SKU available stock" aggregate tables, with API actions for stock occupation, release and replenishment as orders are placed, paid or refunded, and for writing back prices and sales figures.
+
+### Buyer Side
+
+A full path from browsing to delivery:
+
+- **Browse & buy**: browse buyable products by category, check live SKU stock, pass a purchase-limit check before ordering, manage shipping addresses, place an order, create a payment record and pay via WeChat (a mock payment is available for demos).
+- **Orders**: cancel unpaid orders, confirm receipt, remind the merchant to ship; shipments and their items follow the order and tracking details are available.
+- **After-sales & reviews**: request after-sales and follow its progress; leave a review after receipt, with the merchant's reply shown on the product page.
+
+![Mall buyer home](docs/images/mall-user-home.png)
+
+![Mall categories](docs/images/mall-user-category.png)
+
+![Mall orders](docs/images/mall-user-orders.png)
+
+### Merchant Side
+
+The merchant console (`app_mall_seller_home`) is assembled with the page designer. Its home screen is a to-do entry point: pending shipments, reviews to moderate, after-sales cases to handle. Behind it are the daily operations:
+
+- **Products & inventory**: maintain categories, SPUs and SKUs, record stock-in, and check available stock per SKU — aggregate tables compute it by dimension instead of joining tables at query time.
+- **Orders & fulfilment**: view orders and items, mark orders as shipped, generate shipments, with a recompute action keeping shipment totals consistent; buyers' shipping reminders land here too.
+- **Finance & reconciliation**: payment records, price and sales write-backs, a consistency-issue ledger, and a scheduled scan for stuck virtual payments.
+- **Reviews & after-sales**: moderate reviews, reply to buyers, and route after-sales cases through the platform's workflow engine. Complaint handling is a BPMN process — "start → accept → handle → close" — bound to a form, with tasks flowing into the to-do center.
+
+![Merchant to-do workspace](docs/images/mall-admin-home.png)
+
+![Merchant product management](docs/images/mall-admin-products.png)
+
+![Merchant order management](docs/images/mall-admin-orders.png)
+
+To adapt it: open `mall商城` in the app center and edit any form, view, workflow or page directly; to move the whole app to another environment, use app import/export.
 
 ## Build from Source
 
