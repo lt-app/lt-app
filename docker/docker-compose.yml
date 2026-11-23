@@ -1,0 +1,122 @@
+name: lt-app
+services:
+  lt-app-mysql:
+    # 官方镜像即可；建库/建表由 studio 镜像启动时的 init-db.sh 执行内置 dbscript
+    image: mysql:8
+    container_name: lt-app-mysql
+    ports:
+      - "13306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+    volumes:
+      # 仅持久化数据；SQL 初始化脚本随 studio 镜像走
+      - ./mysql_data:/var/lib/mysql
+    healthcheck:
+      # 只校验 root 可连，绝不能带库名/账号：
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent && mysql -uroot -p$$MYSQL_ROOT_PASSWORD -N -e 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - lt-app-network
+
+  lt-app-backend:
+    image: ccr.ccs.tencentyun.com/ltapp/lt-app-studio:latest
+
+    container_name: lt-app-backend
+    ports:
+      # 直连后端调试用；生产环境可删除，统一从 nginx 80 端口进入
+      - "8088:8088"
+    environment:
+      - PROFILE=prod
+      - SERVER_PORT=8088
+      # ---- 数据库初始化（镜像内置 dbscript/mysql，启动时执行）----
+      # 判据：主库 lt_model_info 表不存在才跑 SQL，已存在直接跳过；DB_INIT_SKIP=1 可整体关闭
+      - DB_INIT_HOST=lt-app-mysql
+      - DB_INIT_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root123}
+      # 新增以下用户和schema.
+      - MASTER_USER=${MASTER_USER:-light_app_user}
+      - MASTER_PASSWORD=${MASTER_PASSWORD:-light_app_password}
+      - MASTER_SCHEMA=${MASTER_SCHEMA:-light_master}
+      - TENANT_SCHEMA=${TENANT_SCHEMA:-ltapp_1000}
+      # 数据库连接-Master租户
+      - SPRING_DATASOURCE_URL=jdbc:mysql://lt-app-mysql:3306/${MASTER_SCHEMA:-light_master}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_URL_1000=jdbc:mysql://lt-app-mysql:3306/${TENANT_SCHEMA:-ltapp_1000}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=${MASTER_USER:-light_app_user}
+      - SPRING_DATASOURCE_PASSWORD=${MASTER_PASSWORD:-light_app_password}
+      # 文件路径。
+      - LT_APP_META_FILE_PATH=/app/file/app-assets
+      - LT_APP_ATTACHMENTS_PATH=/app/file/attachments
+      - LT_APP_TMP_PATH=/app/file/tmp
+      - LT_APP_FILE_PATH=/app/file
+      # ---- LLM（OpenAI 兼容协议；未配置则 agent 功能不可用，不阻断启动）----
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - MODEL=${MODEL:-qwen3-coder-plus}
+      # ---- Gitee OAuth 登录（未配置则该登录方式不可用）----
+      - JUSTAUTH_GITEE_CLIENT_ID=${JUSTAUTH_GITEE_CLIENT_ID:-}
+      - JUSTAUTH_GITEE_CLIENT_SECRET=${JUSTAUTH_GITEE_CLIENT_SECRET:-}
+      - JUSTAUTH_GITEE_REDIRECT_URI=${JUSTAUTH_GITEE_REDIRECT_URI:-}
+      # ---- 微信小程序（登录/扫码）----
+      - WX_MINI_APPID=${WX_MINI_APPID:-}
+      - WX_MINI_SECRET=${WX_MINI_SECRET:-}
+      - WX_MINI_SCAN_PAGE=${WX_MINI_SCAN_PAGE:-pages/scanLogin/scanLogin}
+      - WX_MINI_SCAN_PAY_PAGE=pages/scanPay/scanPay
+      # 字段级可逆加密密钥（prod 无默认值，缺失即启动失败）。
+      # 生产部署务必在宿主机 export LT_CRYPTO_SECRET_KEY 覆盖下面的示例默认值（≥16 字符，改后旧密文将无法解密）。
+      - LT_CRYPTO_SECRET_KEY=${LT_CRYPTO_SECRET_KEY:-change-me-32-chars-min-secret!!}
+      # 容器内 agent 技能目录（镜像未内置 agent 技能，指向空路径即可）
+      - LT_AGENT_SKILLS_DIR=/app/data/agent-skills
+      # OCR 工具令牌（可选，未配置则 OCR 工具运行期不可用；不注入会因嵌套占位符启动失败）
+      - OCR_TOKEN=${OCR_TOKEN:-}
+      - JAVA_OPTS=-Xmx1g -Xms512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+DisableExplicitGC -Xlog:gc*:/app/logs/gc.log:time,tags:filecount=5,filesize=10M -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/dumps/ -Djava.security.egd=file:/dev/./urandom
+    depends_on:
+      lt-app-mysql:
+        condition: service_healthy
+    volumes:
+      # 应用文件已内置于镜像（/app/file/app-assets 模型种子、/app/file/tpl 模板，见 docker/Dockerfile）
+      # 运行期写入的子目录挂载到宿主机持久化（附件 / 临时文件；不影响镜像内置内容）
+      - ./file/attachments:/app/file/attachments
+      - ./file/tmp:/app/file/tmp
+      # 应用日志持久化到宿主机
+      - ./logs:/app/logs
+      # ---- 样例：整个 file 目录挂载宿主机（覆盖镜像内置内容，适合迁移已有数据）----
+      # - ../file:/app/file
+      # ---- 样例：把宿主机上的 app.jar 挂载进容器，更新 jar 无需重新构建镜像 ----
+      # 用法：把新 jar 放到 ./app/app.jar，然后 docker compose restart lt-app-studio
+      # - ./app/app.jar:/app/app.jar:ro
+      # ---- 样例：把宿主机上的堆转储目录挂载出来，便于取 OOM dump 分析 ----
+      # - ./dumps:/app/dumps
+    restart: unless-stopped
+    networks:
+      - lt-app-network
+
+  lt-app-front:
+    image: ccr.ccs.tencentyun.com/ltapp/lt-app-designer:latest
+    # 构建前端镜像（要求先在 front/packages/app-designer 下执行 pnpm build 生成 dist）
+    container_name: lt-app-front
+    ports:
+      - "80:80"
+      # ---- 样例：启用 HTTPS 时取消注释，并把证书挂载进来、在 nginx.conf 中补 443 server 块 ----
+      # - "443:443"
+    depends_on:
+      - lt-app-backend
+    volumes:
+      # ---- 可选：用宿主机配置覆盖镜像内置 nginx.conf（改配置需重建镜像才持久化）----
+      # - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # nginx 访问/错误日志持久化到宿主机
+      - ./logs/nginx:/var/log/nginx
+      # ---- 样例：把宿主机上的前端打包产物挂载进容器，更新前端无需重新构建镜像 ----
+      # 用法：本地重新 pnpm build 后，取消注释并 docker compose restart nginx
+      # - ../../front/packages/app-designer/dist:/usr/share/nginx/html:ro
+      # ---- 样例：HTTPS 证书挂载 ----
+      # - ./certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+    networks:
+      - lt-app-network
+
+networks:
+  lt-app-network:
+    driver: bridge

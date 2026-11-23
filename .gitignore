@@ -1,0 +1,57 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+.env
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+/lt-dsl-runtime/src/test/resources/application-hlocal.yaml
+/lt-app-studio/src/main/resources/application-local.yaml
+/docker/file/
+/docker/mysql_data/
+/docker/dbscript/
+/docker/logs/
+/file/app-assets/system/data/we_chat_bot_config.json
+/file/attachments/
+/file/tmp/
+/logs/
+/lt-app-connector/src/test/a.jpg
+/file/test/
+/lt-app-studio/logs/
+/agent-output/
+/data/
+
+### 连接器打包产物 ###
+# 由 file/connector/<name>/package.py 产出，属构建结果不入仓；重新生成见该包 README
+/file/connector/**/*.zip
+/docker/dbscript/
+/docker/push-ccr.sh
+# pre_install 生成的平台相关环境文件(JAVA_HOME 路径因机器而异)
+/docker/build-env.sh
+/docker/build-env.ps1

@@ -1,0 +1,14 @@
+# docker build 上下文排除项（build context = light-app/，仅 Dockerfile 显式 COPY 的内容会进镜像）
+logs/
+*.log
+docker/logs/
+docker/mysql_data/
+docker/file/
+docs/
+# build context = light-app/ 时避免把前端依赖带进上下文（只 COPY dist）
+front/**/node_modules/
+front/**/dist-*/
+front/**/tests/
+front/**/coverage/
+front/**/.playwright*
+front/**/test-results/
